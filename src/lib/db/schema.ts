@@ -40,7 +40,8 @@ export const preRegistrations = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
 
     fullName: varchar("full_name", { length: 120 }).notNull(),
-    email: varchar("email", { length: 255 }),
+    email: varchar("email", { length: 255 }).notNull(),
+    emailVerified: boolean("email_verified").notNull().default(false),
     mobile: varchar("mobile", { length: 20 }).notNull(),
     mobileVerified: boolean("mobile_verified").notNull().default(false),
 
@@ -76,7 +77,7 @@ export const preRegistrations = pgTable(
   },
   (t) => [
     uniqueIndex("pre_registrations_mobile_unique").on(t.mobile),
-    index("pre_registrations_email_idx").on(t.email),
+    uniqueIndex("pre_registrations_email_unique").on(t.email),
     index("pre_registrations_city_idx").on(t.city),
   ],
 );

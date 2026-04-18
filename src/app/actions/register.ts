@@ -3,6 +3,7 @@
 import { db, schema } from "@/lib/db";
 import { preRegisterSchema, ageFromDob } from "@/lib/validation/register";
 import { verifyPhoneToken } from "@/lib/auth/phoneToken";
+import { verifyEmailToken } from "@/lib/auth/emailToken";
 
 export type RegisterResult =
   | { ok: true; id: string }
@@ -32,12 +33,22 @@ export async function submitPreRegisterAction(
     };
   }
 
+  const emailOk = await verifyEmailToken(data.emailToken, data.email);
+  if (!emailOk) {
+    return {
+      ok: false,
+      error: "Email verification expired. Please verify your email again.",
+      fieldErrors: { emailToken: ["Verification expired"] },
+    };
+  }
+
   try {
     const [row] = await db
       .insert(schema.preRegistrations)
       .values({
         fullName: data.fullName,
         email: data.email,
+        emailVerified: true,
         mobile: data.mobile,
         mobileVerified: true,
         gender: data.gender,
@@ -63,6 +74,13 @@ export async function submitPreRegisterAction(
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : "Failed to save registration";
     if (/duplicate key|unique/i.test(msg)) {
+      if (/email/i.test(msg)) {
+        return {
+          ok: false,
+          error: "This email is already pre-registered.",
+          fieldErrors: { email: ["Already registered"] },
+        };
+      }
       return {
         ok: false,
         error: "This mobile number is already pre-registered.",

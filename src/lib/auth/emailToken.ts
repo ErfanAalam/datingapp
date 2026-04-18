@@ -11,19 +11,21 @@ function getKey() {
   return new TextEncoder().encode(secret);
 }
 
-export async function issuePhoneVerifiedToken(phoneE164: string) {
-  return await new SignJWT({ phone: phoneE164, purpose: "phone_verified" })
+export async function issueEmailVerifiedToken(email: string) {
+  return await new SignJWT({ email, purpose: "email_verified" })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
     .setExpirationTime("30m")
     .sign(getKey());
 }
 
-export async function verifyPhoneToken(token: string, expectedPhone: string) {
+export async function verifyEmailToken(token: string, expectedEmail: string) {
   try {
     const { payload } = await jwtVerify(token, getKey());
     return (
-      payload.purpose === "phone_verified" && payload.phone === expectedPhone
+      payload.purpose === "email_verified" &&
+      typeof payload.email === "string" &&
+      payload.email.toLowerCase() === expectedEmail.toLowerCase()
     );
   } catch {
     return false;

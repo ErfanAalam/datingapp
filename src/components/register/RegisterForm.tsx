@@ -2,16 +2,22 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { sendOtpAction, verifyOtpAction } from "@/app/actions/otp";
+import {
+  sendOtpAction,
+  verifyOtpAction,
+  sendEmailOtpAction,
+  verifyEmailOtpAction,
+} from "@/app/actions/otp";
 import { submitPreRegisterAction } from "@/app/actions/register";
 import { Field, TextInput, TextArea, Select, Chip, Stepper } from "./ui";
 import { PhotoUpload } from "./PhotoUpload";
 
-type Photo = { url: string; publicId: string };
+type Photo = { url: string; key: string };
 
 type FormState = {
   fullName: string;
   email: string;
+  emailToken: string;
   mobile: string;
   mobileToken: string;
   dob: string;
@@ -34,6 +40,7 @@ type FormState = {
 const INITIAL: FormState = {
   fullName: "",
   email: "",
+  emailToken: "",
   mobile: "",
   mobileToken: "",
   dob: "",
@@ -66,7 +73,7 @@ const LANGUAGE_OPTIONS = [
   "French", "Arabic",
 ];
 
-const STEPS = ["You", "Mobile", "About", "Preferences", "Photos", "Finish"];
+const STEPS = ["You", "Verify", "About", "Preferences", "Photos", "Finish"];
 
 export function RegisterForm() {
   const router = useRouter();
@@ -99,10 +106,12 @@ export function RegisterForm() {
         e.mobile = "Use format +countrycode number, e.g. +14155552671";
       if (!state.mobileToken)
         e.mobileToken = "Please verify your mobile with the code";
+      if (!/^\S+@\S+\.\S+$/.test(state.email))
+        e.email = "Enter a valid email";
+      if (!state.emailToken)
+        e.emailToken = "Please verify your email with the code";
     }
     if (step === 2) {
-      if (state.email && !/^\S+@\S+\.\S+$/.test(state.email))
-        e.email = "Invalid email";
       if (state.bio.length > 500) e.bio = "Keep your bio under 500 chars";
       if (state.heightCm) {
         const h = parseInt(state.heightCm, 10);
@@ -141,7 +150,8 @@ export function RegisterForm() {
     startTransition(async () => {
       const res = await submitPreRegisterAction({
         fullName: state.fullName,
-        email: state.email || undefined,
+        email: state.email,
+        emailToken: state.emailToken,
         mobile: state.mobile,
         mobileToken: state.mobileToken,
         dob: state.dob,
@@ -186,7 +196,7 @@ export function RegisterForm() {
         <StepYou state={state} set={set} errors={errors} />
       )}
       {step === 1 && (
-        <StepMobile state={state} set={set} errors={errors} />
+        <StepVerify state={state} set={set} errors={errors} />
       )}
       {step === 2 && (
         <StepAbout state={state} set={set} errors={errors} />
@@ -301,106 +311,210 @@ function StepYou({ state, set, errors }: StepProps) {
   );
 }
 
-function StepMobile({ state, set, errors }: StepProps) {
-  const [otp, setOtp] = useState("");
-  const [sent, setSent] = useState(false);
-  const [sending, setSending] = useState(false);
-  const [verifying, setVerifying] = useState(false);
-  const [msg, setMsg] = useState<string | null>(null);
+function StepVerify({ state, set, errors }: StepProps) {
+  const [phoneOtp, setPhoneOtp] = useState("");
+  const [phoneSent, setPhoneSent] = useState(false);
+  const [phoneSending, setPhoneSending] = useState(false);
+  const [phoneVerifying, setPhoneVerifying] = useState(false);
+  const [phoneMsg, setPhoneMsg] = useState<string | null>(null);
 
-  async function send() {
-    setMsg(null);
-    setSending(true);
+  const [emailOtp, setEmailOtp] = useState("");
+  const [emailSent, setEmailSent] = useState(false);
+  const [emailSending, setEmailSending] = useState(false);
+  const [emailVerifying, setEmailVerifying] = useState(false);
+  const [emailMsg, setEmailMsg] = useState<string | null>(null);
+
+  async function sendPhone() {
+    setPhoneMsg(null);
+    setPhoneSending(true);
     try {
       const res = await sendOtpAction(state.mobile);
       if (!res.ok) {
-        setMsg(res.error);
+        setPhoneMsg(res.error);
         return;
       }
-      setSent(true);
-      setMsg("Code sent! Check your messages.");
+      setPhoneSent(true);
+      setPhoneMsg("Code sent on WhatsApp! Check your chats.");
     } finally {
-      setSending(false);
+      setPhoneSending(false);
     }
   }
 
-  async function verify() {
-    setMsg(null);
-    setVerifying(true);
+  async function verifyPhone() {
+    setPhoneMsg(null);
+    setPhoneVerifying(true);
     try {
-      const res = await verifyOtpAction(state.mobile, otp);
+      const res = await verifyOtpAction(state.mobile, phoneOtp);
       if (!res.ok || !res.token) {
-        setMsg(res.ok ? "Unexpected response" : res.error);
+        setPhoneMsg(res.ok ? "Unexpected response" : res.error);
         return;
       }
       set("mobileToken", res.token);
-      setMsg("Mobile verified ✓");
+      setPhoneMsg("Mobile verified ✓");
     } finally {
-      setVerifying(false);
+      setPhoneVerifying(false);
+    }
+  }
+
+  async function sendEmail() {
+    setEmailMsg(null);
+    setEmailSending(true);
+    try {
+      const res = await sendEmailOtpAction(state.email);
+      if (!res.ok) {
+        setEmailMsg(res.error);
+        return;
+      }
+      setEmailSent(true);
+      setEmailMsg("Code sent! Check your inbox (and spam folder).");
+    } finally {
+      setEmailSending(false);
+    }
+  }
+
+  async function verifyEmail() {
+    setEmailMsg(null);
+    setEmailVerifying(true);
+    try {
+      const res = await verifyEmailOtpAction(state.email, emailOtp);
+      if (!res.ok || !res.token) {
+        setEmailMsg(res.ok ? "Unexpected response" : res.error);
+        return;
+      }
+      set("emailToken", res.token);
+      setEmailMsg("Email verified ✓");
+    } finally {
+      setEmailVerifying(false);
     }
   }
 
   return (
-    <div className="space-y-5">
-      <Field
-        label="Mobile number"
-        required
-        error={errors.mobile}
-        hint="Include country code, e.g. +91… or +1…"
-      >
-        <div className="flex gap-2">
-          <TextInput
-            inputMode="tel"
-            autoComplete="tel"
-            placeholder="+14155552671"
-            value={state.mobile}
-            onChange={(e) => {
-              set("mobile", e.target.value.replace(/\s+/g, ""));
-              set("mobileToken", "");
-              setSent(false);
-            }}
-          />
-          <button
-            type="button"
-            onClick={send}
-            disabled={sending || !/^\+[1-9]\d{7,14}$/.test(state.mobile)}
-            className="rounded-2xl px-4 py-3 text-sm font-semibold bg-white/10 border border-white/15 hover:bg-white/15 transition disabled:opacity-40 whitespace-nowrap"
-          >
-            {sending ? "Sending…" : sent ? "Resend" : "Send code"}
-          </button>
-        </div>
-      </Field>
-
-      {sent && !state.mobileToken ? (
-        <Field label="Enter the 6-digit code" required error={errors.mobileToken}>
+    <div className="space-y-6">
+      <div className="space-y-5">
+        <Field
+          label="Mobile number (WhatsApp)"
+          required
+          error={errors.mobile}
+          hint="We send the code via WhatsApp. Include country code, e.g. +91… or +1…"
+        >
           <div className="flex gap-2">
             <TextInput
-              inputMode="numeric"
-              autoComplete="one-time-code"
-              maxLength={8}
-              placeholder="123456"
-              value={otp}
-              onChange={(e) => setOtp(e.target.value.replace(/\D/g, ""))}
+              inputMode="tel"
+              autoComplete="tel"
+              placeholder="+14155552671"
+              value={state.mobile}
+              onChange={(e) => {
+                set("mobile", e.target.value.replace(/\s+/g, ""));
+                set("mobileToken", "");
+                setPhoneSent(false);
+              }}
             />
             <button
               type="button"
-              onClick={verify}
-              disabled={verifying || otp.length < 4}
-              className="btn-primary rounded-2xl px-4 py-3 text-sm font-semibold whitespace-nowrap"
+              onClick={sendPhone}
+              disabled={phoneSending || !/^\+[1-9]\d{7,14}$/.test(state.mobile)}
+              className="rounded-2xl px-4 py-3 text-sm font-semibold bg-white/10 border border-white/15 hover:bg-white/15 transition disabled:opacity-40 whitespace-nowrap"
             >
-              {verifying ? "Verifying…" : "Verify"}
+              {phoneSending ? "Sending…" : phoneSent ? "Resend" : "Send on WhatsApp"}
             </button>
           </div>
         </Field>
-      ) : null}
 
-      {state.mobileToken ? (
-        <div className="rounded-2xl border border-emerald-400/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">
-          ✓ Mobile verified — you can continue.
-        </div>
-      ) : null}
+        {phoneSent && !state.mobileToken ? (
+          <Field label="Enter the 6-digit WhatsApp code" required error={errors.mobileToken}>
+            <div className="flex gap-2">
+              <TextInput
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                maxLength={8}
+                placeholder="123456"
+                value={phoneOtp}
+                onChange={(e) => setPhoneOtp(e.target.value.replace(/\D/g, ""))}
+              />
+              <button
+                type="button"
+                onClick={verifyPhone}
+                disabled={phoneVerifying || phoneOtp.length < 4}
+                className="btn-primary rounded-2xl px-4 py-3 text-sm font-semibold whitespace-nowrap"
+              >
+                {phoneVerifying ? "Verifying…" : "Verify"}
+              </button>
+            </div>
+          </Field>
+        ) : null}
 
-      {msg ? <p className="text-sm text-white/70">{msg}</p> : null}
+        {state.mobileToken ? (
+          <div className="rounded-2xl border border-emerald-400/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">
+            ✓ Mobile verified via WhatsApp.
+          </div>
+        ) : null}
+
+        {phoneMsg ? <p className="text-sm text-white/70">{phoneMsg}</p> : null}
+      </div>
+
+      <div className="h-px bg-white/10" />
+
+      <div className="space-y-5">
+        <Field
+          label="Email address"
+          required
+          error={errors.email}
+          hint="We'll email you a 6-digit code to verify."
+        >
+          <div className="flex gap-2">
+            <TextInput
+              type="email"
+              autoComplete="email"
+              placeholder="you@example.com"
+              value={state.email}
+              onChange={(e) => {
+                set("email", e.target.value.trim());
+                set("emailToken", "");
+                setEmailSent(false);
+              }}
+            />
+            <button
+              type="button"
+              onClick={sendEmail}
+              disabled={emailSending || !/^\S+@\S+\.\S+$/.test(state.email)}
+              className="rounded-2xl px-4 py-3 text-sm font-semibold bg-white/10 border border-white/15 hover:bg-white/15 transition disabled:opacity-40 whitespace-nowrap"
+            >
+              {emailSending ? "Sending…" : emailSent ? "Resend" : "Send code"}
+            </button>
+          </div>
+        </Field>
+
+        {emailSent && !state.emailToken ? (
+          <Field label="Enter the 6-digit email code" required error={errors.emailToken}>
+            <div className="flex gap-2">
+              <TextInput
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                maxLength={8}
+                placeholder="123456"
+                value={emailOtp}
+                onChange={(e) => setEmailOtp(e.target.value.replace(/\D/g, ""))}
+              />
+              <button
+                type="button"
+                onClick={verifyEmail}
+                disabled={emailVerifying || emailOtp.length < 4}
+                className="btn-primary rounded-2xl px-4 py-3 text-sm font-semibold whitespace-nowrap"
+              >
+                {emailVerifying ? "Verifying…" : "Verify"}
+              </button>
+            </div>
+          </Field>
+        ) : null}
+
+        {state.emailToken ? (
+          <div className="rounded-2xl border border-emerald-400/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">
+            ✓ Email verified.
+          </div>
+        ) : null}
+
+        {emailMsg ? <p className="text-sm text-white/70">{emailMsg}</p> : null}
+      </div>
     </div>
   );
 }
@@ -408,16 +522,6 @@ function StepMobile({ state, set, errors }: StepProps) {
 function StepAbout({ state, set, errors }: StepProps) {
   return (
     <div className="space-y-5">
-      <Field label="Email (optional)" error={errors.email}>
-        <TextInput
-          type="email"
-          autoComplete="email"
-          placeholder="you@example.com"
-          value={state.email}
-          onChange={(e) => set("email", e.target.value)}
-        />
-      </Field>
-
       <Field label="Short bio" error={errors.bio} hint={`${state.bio.length}/500`}>
         <TextArea
           placeholder="A line or two that captures your vibe…"
@@ -592,6 +696,7 @@ function StepFinish({ state, set, errors }: StepProps) {
     () => [
       ["Name", state.fullName],
       ["Mobile", state.mobile + (state.mobileToken ? " ✓" : "")],
+      ["Email", state.email + (state.emailToken ? " ✓" : "")],
       ["DOB", state.dob],
       ["Gender", state.gender.replaceAll("_", " ")],
       ["Interested in", state.interestedIn],

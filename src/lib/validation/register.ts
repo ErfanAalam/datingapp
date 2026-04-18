@@ -35,10 +35,10 @@ export const preRegisterSchema = z
     email: z
       .string()
       .trim()
+      .toLowerCase()
       .email("Invalid email")
-      .max(255)
-      .optional()
-      .or(z.literal("").transform(() => undefined)),
+      .max(255),
+    emailToken: z.string().min(10, "Please verify your email"),
     mobile: z.string().regex(phoneRegex, "Use international format, e.g. +14155552671"),
     mobileToken: z.string().min(10, "Please verify your mobile number"),
 

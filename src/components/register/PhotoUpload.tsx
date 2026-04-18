@@ -1,9 +1,8 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { getUploadSignatureAction } from "@/app/actions/upload";
 
-type Photo = { url: string; publicId: string };
+type Photo = { url: string; key: string };
 
 export function PhotoUpload({
   photos,
@@ -44,35 +43,17 @@ export function PhotoUpload({
 
     setUploading(true);
     try {
-      const sig = await getUploadSignatureAction();
-      if (!sig.ok) {
-        setError(sig.error);
-        return;
-      }
-
       const uploaded: Photo[] = [];
       for (const file of chosen) {
         const fd = new FormData();
         fd.append("file", file);
-        fd.append("api_key", sig.apiKey);
-        fd.append("timestamp", String(sig.timestamp));
-        fd.append("signature", sig.signature);
-        fd.append("folder", sig.folder);
-        if (sig.uploadPreset) fd.append("upload_preset", sig.uploadPreset);
-
-        const res = await fetch(
-          `https://api.cloudinary.com/v1_1/${sig.cloudName}/image/upload`,
-          { method: "POST", body: fd },
-        );
+        const res = await fetch("/api/upload", { method: "POST", body: fd });
         if (!res.ok) {
-          const t = await res.text();
-          throw new Error(`Cloudinary upload failed: ${t}`);
+          const body = await res.json().catch(() => ({ error: "Upload failed" }));
+          throw new Error(body.error || "Upload failed");
         }
-        const json = (await res.json()) as {
-          secure_url: string;
-          public_id: string;
-        };
-        uploaded.push({ url: json.secure_url, publicId: json.public_id });
+        const json = (await res.json()) as Photo;
+        uploaded.push(json);
       }
 
       onChange([...photos, ...uploaded]);
@@ -98,7 +79,7 @@ export function PhotoUpload({
       <div className="grid grid-cols-3 sm:grid-cols-5 gap-2 sm:gap-3">
         {photos.map((p, i) => (
           <div
-            key={p.publicId}
+            key={p.key}
             className="relative aspect-square rounded-2xl overflow-hidden border border-white/10 group"
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
